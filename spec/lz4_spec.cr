@@ -1,5 +1,4 @@
 require "./spec_helper"
 
-describe Lz4 do
-
+describe LZ4 do
 end

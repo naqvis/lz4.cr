@@ -1,4 +1,4 @@
 require "./spec_helper"
 
-describe LZ4 do
+describe Compress::LZ4 do
 end

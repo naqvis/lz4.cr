@@ -1,4 +1,4 @@
-module LZ4
+module Compress::LZ4
   @[Link(ldflags: "`command -v pkg-config > /dev/null && pkg-config --libs liblz4 2> /dev/null|| printf %s '--llz4'`")]
   lib LibLZ4
     alias ErrorCodeT = LibC::SizeT

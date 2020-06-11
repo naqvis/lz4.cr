@@ -15,13 +15,13 @@
 #
 # File.open("./file.txt", "r") do |input_file|
 #   File.open("./file.lz4", "w") do |output_file|
-#     LZ4::Writer.open(output_file) do |lz4|
+#     Compress::LZ4::Writer.open(output_file) do |lz4|
 #       IO.copy(input_file, lz4)
 #     end
 #   end
 # end
 # ```
-class LZ4::Writer < IO
+class Compress::LZ4::Writer < IO
   # If `#sync_close?` is `true`, closing this IO will close the underlying IO.
   property? sync_close : Bool
   @context : LibLZ4::Cctx
@@ -81,11 +81,11 @@ class LZ4::Writer < IO
   end
 
   # See `IO#write`.
-  def write(slice : Bytes) : Nil
+  def write(slice : Bytes) : Int64
     check_open
-    return if slice.empty?
+    return 0i64 if slice.empty?
     write_header
-
+    written = 0i64
     while slice.size > 0
       write_size = slice.size
       write_size = @buffer.size if write_size > @buffer.size
@@ -93,12 +93,13 @@ class LZ4::Writer < IO
 
       comp_size = LibLZ4.compress_update(@context, @buffer.to_unsafe, @buffer.size, slice.to_unsafe, write_size, nil)
       raise LZ4Error.new("Compression failed: #{String.new(LibLZ4.get_error_name(comp_size))}") unless LibLZ4.is_error(comp_size) == 0
-      @output.write(@buffer[...comp_size]) if comp_size > 0
+      written += @output.write(@buffer[...comp_size]) if comp_size > 0
       # 0 means data was buffered, to avoid buffer too small problem at end,
       # let's flush the data manually
       flush if comp_size == 0
       slice = slice[write_size..]
     end
+    written
   end
 
   # See `IO#flush`.
@@ -137,7 +138,7 @@ class LZ4::Writer < IO
   end
 end
 
-struct LZ4::CompressOptions
+struct Compress::LZ4::CompressOptions
   enum CompressionLevel
     FAST    =  0
     MIN     =  3

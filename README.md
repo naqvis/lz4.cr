@@ -23,7 +23,7 @@ LZ4 is lossless compression algorithm, providing compression speed > 500 MB/s pe
 require "lz4"
 ```
 
-`LZ4` shard provides both `LZ4::Reader` and `LZ4::Writer` as well as `LZ4#decode` and `LZ4#encode` methods for quick usage.
+`LZ4` shard provides both `Compress::LZ4::Reader` and `Compress::LZ4::Writer` as well as `Compress::LZ4#decode` and `Compress::LZ4#encode` methods for quick usage.
 
 ## Example: decompress an lz4 file
 #
@@ -31,7 +31,7 @@ require "lz4"
 require "lz4"
 
 string = File.open("file.xz") do |file|
-   LZ4::Reader.open(file) do |lz4|
+   Compress::LZ4::Reader.open(file) do |lz4|
      lz4.gets_to_end
    end
 end
@@ -47,16 +47,13 @@ File.write("file.txt", "abcd")
 
 File.open("./file.txt", "r") do |input_file|
   File.open("./file.xz", "w") do |output_file|
-    LZ4::Writer.open(output_file) do |lz4|
+    Compress::LZ4::Writer.open(output_file) do |lz4|
       IO.copy(input_file, lz4)
     end
   end
 end
 ```
 
-## Development
-
-TODO: Write development instructions here
 
 ## Contributing
 

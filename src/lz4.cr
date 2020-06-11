@@ -1,7 +1,7 @@
 # LZ4 Crystal Wrapper
 require "semantic_version"
 
-module LZ4
+module Compress::LZ4
   VERSION = "0.1.0"
 
   LZ4_VERSION         = SemanticVersion.parse String.new(LibLZ4.version_string)

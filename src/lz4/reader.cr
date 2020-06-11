@@ -8,13 +8,13 @@
 # require "lz4"
 
 # string = File.open("file.lz4") do |file|
-#    LZ4::Reader.open(file) do |lz4|
+#    Compress::LZ4::Reader.open(file) do |lz4|
 #      lz4.gets_to_end
 #    end
 # end
 # pp string
 # ```
-class LZ4::Reader < IO
+class Compress::LZ4::Reader < IO
   include IO::Buffered
 
   # If `#sync_close?` is `true`, closing this IO will close the underlying IO.

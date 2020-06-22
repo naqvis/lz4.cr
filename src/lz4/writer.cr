@@ -81,11 +81,10 @@ class Compress::LZ4::Writer < IO
   end
 
   # See `IO#write`.
-  def write(slice : Bytes) : Int64
+  def write(slice : Bytes) : Nil
     check_open
     return 0i64 if slice.empty?
     write_header
-    written = 0i64
     while slice.size > 0
       write_size = slice.size
       write_size = @buffer.size if write_size > @buffer.size
@@ -93,13 +92,12 @@ class Compress::LZ4::Writer < IO
 
       comp_size = LibLZ4.compress_update(@context, @buffer.to_unsafe, @buffer.size, slice.to_unsafe, write_size, nil)
       raise LZ4Error.new("Compression failed: #{String.new(LibLZ4.get_error_name(comp_size))}") unless LibLZ4.is_error(comp_size) == 0
-      written += @output.write(@buffer[...comp_size]) if comp_size > 0
+      @output.write(@buffer[...comp_size]) if comp_size > 0
       # 0 means data was buffered, to avoid buffer too small problem at end,
       # let's flush the data manually
       flush if comp_size == 0
       slice = slice[write_size..]
     end
-    written
   end
 
   # See `IO#flush`.

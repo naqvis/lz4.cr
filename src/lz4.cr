@@ -2,7 +2,7 @@
 require "semantic_version"
 
 module Compress::LZ4
-  VERSION = "0.1.3"
+  VERSION = "0.1.4"
 
   LZ4_VERSION         = SemanticVersion.parse String.new(LibLZ4.version_string)
   LZ4_VERSION_MINIMUM = SemanticVersion.parse("1.9.2")

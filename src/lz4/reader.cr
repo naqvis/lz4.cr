@@ -15,27 +15,15 @@
 # pp string
 # ```
 class Compress::LZ4::Reader < IO
-  include IO::Buffered
-
-  # If `#sync_close?` is `true`, closing this IO will close the underlying IO.
   property? sync_close : Bool
-
-  # Returns `true` if this reader is closed.
   getter? closed = false
-
   @context : LibLZ4::Dctx
 
-  # buffer size that avoids execessive round-trips between C and Crystal but doesn't waste too much
-  # memory on buffering. Its arbitrarily chosen.
-  BUF_SIZE = 64 * 1024
-
-  # Creates an instance of LZ4::Reader.
-  def initialize(@io : IO, @sync_close : Bool = false)
-    @buffer = Bytes.new(BUF_SIZE)
-    @chunk = Bytes.empty
-
+  def initialize(@io : IO, @sync_close = false)
     ret = LibLZ4.create_decompression_context(out @context, LibLZ4::VERSION)
-    raise LZ4Error.new("Unable to create lz4 decoder instance: #{String.new(LibLZ4.get_error_name(ret))}") unless LibLZ4.is_error(ret) == 0
+    raise_if_error(ret, "Failed to create decompression context")
+    @buffer = Bytes.new(DEFAULT_BUFFER_SIZE)
+    @chunk = Bytes.empty
   end
 
   # Creates a new reader from the given *io*, yields it to the given block,
@@ -65,65 +53,65 @@ class Compress::LZ4::Reader < IO
   end
 
   # Always raises `IO::Error` because this is a read-only `IO`.
-  def unbuffered_write(slice : Bytes)
+  def write(slice : Bytes) : Nil
     raise IO::Error.new "Can't write to LZ4::Reader"
   end
 
-  def unbuffered_read(slice : Bytes)
+  def read(slice : Bytes) : Int
     check_open
-
     return 0 if slice.empty?
 
-    if @chunk.empty?
-      m = @io.read(@buffer)
-      return m if m == 0
-      @chunk = @buffer[0, m]
-    end
+    refill_buffer if @chunk.empty?
 
+    opts = LibLZ4::DecompressOptionsT.new(stable_dst: 1)
+    decompressed_bytes = 0
     loop do
-      in_remaining = @chunk.size.to_u64
-      out_remaining = slice.size.to_u64
+      src_remaining = @chunk.size.to_u64
+      dst_remaining = slice.size.to_u64
 
-      in_ptr = @chunk.to_unsafe
-      out_ptr = slice.to_unsafe
+      ret = LibLZ4.decompress(@context, slice, pointerof(dst_remaining), @chunk, pointerof(src_remaining), pointerof(opts))
+      raise_if_error(ret, "Failed to decompress")
 
-      ret = LibLZ4.decompress(@context, out_ptr, pointerof(out_remaining), in_ptr, pointerof(in_remaining), nil)
-      raise LZ4Error.new("lz4 decompression error: #{String.new(LibLZ4.get_error_name(ret))}") unless LibLZ4.is_error(ret) == 0
-
-      @chunk = @chunk[in_remaining..]
-      return out_remaining if ret == 0
-
-      if out_remaining == 0
-        # Probably ran out of data and buffer needs a refill
-        enc_n = @io.read(@buffer)
-        return 0 if enc_n == 0
-        @chunk = @buffer[0, enc_n]
-        next
-      end
-
-      return out_remaining
+      @chunk = @chunk + src_remaining
+      slice = slice + dst_remaining
+      decompressed_bytes += dst_remaining
+      break if slice.empty?        # got all we needed
+      break if dst_remaining.zero? # didn't progress
+      STDERR.puts "hint=#{ret}"
+      refill_buffer if ret > 0 # ret is a hint of how much more src data is needed
     end
-    0
+    decompressed_bytes
   end
 
-  def unbuffered_flush
+  def flush
     raise IO::Error.new "Can't flush LZ4::Reader"
   end
 
-  # Closes this reader.
-  def unbuffered_close
-    return if @closed || @context.nil?
+  def close
+    check_open
     @closed = true
-
-    LibLZ4.free_decompression_context(@context)
     @io.close if @sync_close
   end
 
-  def unbuffered_rewind
-    check_open
+  def finalize
+    LibLZ4.free_decompression_context(@context)
+  end
 
+  def rewind
     @io.rewind
-    initialize(@io, @sync_close)
+    LibLZ4.reset_decompression_context(@context)
+  end
+
+  private def refill_buffer
+    cnt = @io.read(@buffer)
+    STDERR.puts "refilling buffer, got=#{cnt}"
+    @chunk = @buffer[0, cnt]
+  end
+
+  private def raise_if_error(ret : Int, msg : String)
+    if LibLZ4.is_error(ret) != 0
+      raise LZ4Error.new("#{msg}: #{String.new(LibLZ4.get_error_name(ret))}")
+    end
   end
 
   # :nodoc:

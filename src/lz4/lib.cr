@@ -1,5 +1,5 @@
 module Compress::LZ4
-  @[Link(ldflags: "`command -v pkg-config > /dev/null && pkg-config --libs liblz4 2> /dev/null|| printf %s '--llz4'`")]
+  @[Link("lz4")]
   lib LibLZ4
     alias ErrorCodeT = LibC::SizeT
     alias Uint32T = LibC::UInt

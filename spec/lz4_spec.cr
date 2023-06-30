@@ -69,15 +69,17 @@ describe Compress::LZ4 do
     reader.close
   end
 
-  it "should raise if not fully decompressed on close" do
-    src = "a" * 1024**2
+  it "can not read more than there is" do
+    src = "a"
     output = IO::Memory.new
     writer = Compress::LZ4::Writer.new(output)
     writer.write src.to_slice
+    writer.flush
     output.rewind
     reader = Compress::LZ4::Reader.new(output)
     dst = Bytes.new(1024)
     read_count = reader.read(dst)
+    read_count.should eq 1
     reader.close
   end
 end

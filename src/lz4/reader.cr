@@ -20,6 +20,13 @@ class Compress::LZ4::Reader < IO
   property? sync_close : Bool
   getter? closed = false
   @context : LibLZ4::Dctx
+  getter compressed_bytes = 0u64
+  getter uncompressed_bytes = 0u64
+
+  def compression_ratio : Float64
+    return 0.0 if @compressed_bytes.zero?
+    @uncompressed_bytes / @compressed_bytes
+  end
 
   def initialize(@io : IO, @sync_close = false)
     ret = LibLZ4.create_decompression_context(out @context, LibLZ4::VERSION)
@@ -81,6 +88,7 @@ class Compress::LZ4::Reader < IO
       break if dst_remaining.zero? # didn't progress
       refill_buffer if ret > 0     # ret is a hint of how much more src data is needed
     end
+    @uncompressed_bytes &+= decompressed_bytes
     decompressed_bytes
   end
 
@@ -105,6 +113,7 @@ class Compress::LZ4::Reader < IO
 
   private def refill_buffer
     cnt = @io.read(@buffer)
+    @compressed_bytes &+= cnt
     @chunk = @buffer[0, cnt]
   end
 

@@ -29,6 +29,13 @@ class Compress::LZ4::Writer < IO
   @context : LibLZ4::Cctx
   @pref : LibLZ4::PreferencesT
   @header_written = false
+  getter compressed_bytes = 0u64
+  getter uncompressed_bytes = 0u64
+
+  def compression_ratio : Float64
+    return 0.0 if @compressed_bytes.zero?
+    @uncompressed_bytes / @compressed_bytes
+  end
 
   def initialize(@output : IO, options = CompressOptions.new, @sync_close = false)
     ret = LibLZ4.create_compression_context(out @context, LibLZ4::VERSION)
@@ -79,6 +86,7 @@ class Compress::LZ4::Writer < IO
     return if @header_written
     ret = LibLZ4.compress_begin(@context, @buffer, @buffer.size, nil)
     raise_if_error(ret, "Failed to begin compression")
+    @compressed_bytes &+= ret
     @output.write(@buffer[0, ret])
     @header_written = true
   end
@@ -86,11 +94,13 @@ class Compress::LZ4::Writer < IO
   def write(slice : Bytes) : Nil
     check_open
     write_header
+    @uncompressed_bytes &+= slice.size
     opts = LibLZ4::CompressOptionsT.new(stable_src: 1)
     until slice.empty?
       read_size = Math.min(slice.size, @block_size)
       ret = LibLZ4.compress_update(@context, @buffer, @buffer.size, slice, read_size, pointerof(opts))
       raise_if_error(ret, "Failed to compress")
+      @compressed_bytes &+= ret
       @output.write(@buffer[0, ret])
       slice = slice + read_size
     end
@@ -101,6 +111,7 @@ class Compress::LZ4::Writer < IO
     check_open
     ret = LibLZ4.compress_end(@context, @buffer, @buffer.size, nil)
     raise_if_error(ret, "Failed to end compression")
+    @compressed_bytes &+= ret
     @output.write(@buffer[0, ret])
     @output.flush
     @header_written = false

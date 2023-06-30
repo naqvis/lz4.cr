@@ -96,24 +96,22 @@ class Compress::LZ4::Writer < IO
     end
   end
 
+  # Ends a LZ4 frame
   def flush : Nil
-    check_open
-    ret = LibLZ4.flush(@context, @buffer, @buffer.size, nil)
-    raise_if_error(ret, "Failed to flush")
-    @output.write(@buffer[0, ret])
-    @output.flush
-  end
-
-  # Ends a LZ4 frame, the stream can still be written to, unless @sync_close
-  def close
     check_open
     ret = LibLZ4.compress_end(@context, @buffer, @buffer.size, nil)
     raise_if_error(ret, "Failed to end compression")
     @output.write(@buffer[0, ret])
+    @output.flush
     @header_written = false
+  end
+
+  # Ends the current frame, the stream can still be written to, unless @sync_close
+  def close
+    flush
   ensure
     if @sync_close
-      @closed = true # the stream can still be written to
+      @closed = true # the stream can still be written until the underlaying io is closed
       @output.close
     end
   end

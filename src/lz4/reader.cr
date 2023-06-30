@@ -1,10 +1,12 @@
+require "./lib"
+
 # A read-only `IO` object to decompress data in the LZ4 frame format.
 #
 # Instances of this class wrap another IO object. When you read from this instance
 # instance, it reads data from the underlying IO, decompresses it, and returns
 # it to the caller.
 # ## Example: decompress an lz4 file
-# ```crystal
+# ```
 # require "lz4"
 
 # string = File.open("file.lz4") do |file|

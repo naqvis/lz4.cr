@@ -11,23 +11,21 @@ describe Compress::LZ4 do
   end
 
   it "can decompress" do
-    src_str = "foobar" * 100000
-    input = IO::Memory.new(src_str)
+    bytes = Random::DEFAULT.random_bytes(10 * 1024**2)
+    input = IO::Memory.new(bytes)
     compressed = IO::Memory.new
-    Compress::LZ4::Writer.open(compressed) do |lz4|
-      cnt = IO.copy(input, lz4)
-      puts "wrote #{cnt} bytes"
-    end
+    writer = Compress::LZ4::Writer.new(compressed)
+    writer.write bytes
+    writer.close
+
     compressed.rewind
 
     output = IO::Memory.new
     Compress::LZ4::Reader.open(compressed) do |lz4|
       cnt = IO.copy(lz4, output)
-      puts "read #{cnt} bytes"
     end
-    str = output.to_s
-    str.bytesize.should eq src_str.bytesize
-    str.should eq src_str
+    output.bytesize.should eq bytes.bytesize
+    output.to_slice.should eq bytes
   end
 
   it "can decompress small parts" do

@@ -41,6 +41,7 @@ class Compress::LZ4::Writer < IO
     ret = LibLZ4.create_compression_context(out @context, LibLZ4::VERSION)
     raise_if_error(ret, "Failed to create compression context")
     @pref = options.to_preferences
+    @opts = LibLZ4::CompressOptionsT.new(stable_src: 0)
     @block_size = case options.block_size
                   in BlockSize::Default  then 64 * 1024
                   in BlockSize::Max64Kb  then 64 * 1024
@@ -53,27 +54,27 @@ class Compress::LZ4::Writer < IO
   end
 
   # Creates a new writer to the given *filename*.
-  def self.new(filename : String, options : CompressOptions = CompressOptions.default)
+  def self.new(filename : String, options = CompressOptions.nw)
     new(::File.new(filename, "w"), options: options, sync_close: true)
   end
 
   # Creates a new writer to the given *io*, yields it to the given block,
   # and closes it at the end.
-  def self.open(io : IO, options : CompressOptions = CompressOptions.default, sync_close = false)
+  def self.open(io : IO, options = CompressOptions.new, sync_close = false)
     writer = new(io, options: options, sync_close: sync_close)
     yield writer ensure writer.close
   end
 
   # Creates a new writer to the given *filename*, yields it to the given block,
   # and closes it at the end.
-  def self.open(filename : String, options : CompressOptions = CompressOptions.default)
+  def self.open(filename : String, options = CompressOptions.new)
     writer = new(filename, options: options)
     yield writer ensure writer.close
   end
 
   # Creates a new writer for the given *io*, yields it to the given block,
   # and closes it at its end.
-  def self.open(io : IO, options : CompressOptions = CompressOptions.default, sync_close : Bool = false)
+  def self.open(io : IO, options = CompressOptions.new, sync_close = false)
     writer = new(io, options: options, sync_close: sync_close)
     yield writer ensure writer.close
   end
@@ -95,10 +96,9 @@ class Compress::LZ4::Writer < IO
     check_open
     write_header
     @uncompressed_bytes &+= slice.size
-    opts = LibLZ4::CompressOptionsT.new(stable_src: 0)
     until slice.empty?
       read_size = Math.min(slice.size, @block_size)
-      ret = LibLZ4.compress_update(@context, @buffer, @buffer.size, slice, read_size, pointerof(opts))
+      ret = LibLZ4.compress_update(@context, @buffer, @buffer.size, slice, read_size, pointerof(@opts))
       raise_if_error(ret, "Failed to compress")
       @compressed_bytes &+= ret
       @output.write(@buffer[0, ret])
@@ -109,7 +109,7 @@ class Compress::LZ4::Writer < IO
   # Ends a LZ4 frame
   def flush : Nil
     check_open
-    ret = LibLZ4.compress_end(@context, @buffer, @buffer.size, nil)
+    ret = LibLZ4.compress_end(@context, @buffer, @buffer.size, pointerof(@opts))
     raise_if_error(ret, "Failed to end compression")
     @compressed_bytes &+= ret
     @output.write(@buffer[0, ret])

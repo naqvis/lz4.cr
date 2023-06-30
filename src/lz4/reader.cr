@@ -31,7 +31,7 @@ class Compress::LZ4::Reader < IO
   def initialize(@io : IO, @sync_close = false)
     ret = LibLZ4.create_decompression_context(out @context, LibLZ4::VERSION)
     raise_if_error(ret, "Failed to create decompression context")
-    @buffer = Bytes.new(64 * 1024)
+    @buffer = Bytes.new(32 * 1024)
     @buffer_rem = Bytes.empty
   end
 
@@ -72,7 +72,7 @@ class Compress::LZ4::Reader < IO
 
     refill_buffer
 
-    opts = LibLZ4::DecompressOptionsT.new(stable_dst: 1)
+    opts = LibLZ4::DecompressOptionsT.new(stable_dst: 0)
     decompressed_bytes = 0
     until @buffer_rem.empty?
       src_remaining = @buffer_rem.size.to_u64
@@ -86,7 +86,7 @@ class Compress::LZ4::Reader < IO
       decompressed_bytes += dst_remaining
       break if slice.empty? # got all we needed
       break if ret.zero?    # ret is a hint of how much more src data is needed
-      refill_buffer
+      refill_buffer(ret)
     end
     @uncompressed_bytes &+= decompressed_bytes
     decompressed_bytes
@@ -97,10 +97,9 @@ class Compress::LZ4::Reader < IO
   end
 
   def close
-    check_open
     if @sync_close
-      @closed = true # Only really closed if io is closed
       @io.close
+      @closed = true # Only really closed if io is closed
     end
   end
 
@@ -113,9 +112,13 @@ class Compress::LZ4::Reader < IO
     LibLZ4.reset_decompression_context(@context)
   end
 
-  private def refill_buffer
+  private def refill_buffer(hint = nil)
     return unless @buffer_rem.empty? # never overwrite existing buffer
-    cnt = @io.read(@buffer)
+    if hint
+      cnt = @io.read(@buffer[0, Math.min(hint, @buffer.size)])
+    else
+      cnt = @io.read(@buffer)
+    end
     @compressed_bytes &+= cnt
     @buffer_rem = @buffer[0, cnt]
   end

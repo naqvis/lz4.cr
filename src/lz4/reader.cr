@@ -59,7 +59,7 @@ class Compress::LZ4::Reader < IO
     raise IO::Error.new "Can't write to LZ4::Reader"
   end
 
-  def read(slice : Bytes) : Int
+  def read(slice : Bytes) : Int32
     check_open
     return 0 if slice.empty?
 
@@ -79,8 +79,7 @@ class Compress::LZ4::Reader < IO
       decompressed_bytes += dst_remaining
       break if slice.empty?        # got all we needed
       break if dst_remaining.zero? # didn't progress
-      STDERR.puts "hint=#{ret}"
-      refill_buffer if ret > 0 # ret is a hint of how much more src data is needed
+      refill_buffer if ret > 0     # ret is a hint of how much more src data is needed
     end
     decompressed_bytes
   end
@@ -106,7 +105,6 @@ class Compress::LZ4::Reader < IO
 
   private def refill_buffer
     cnt = @io.read(@buffer)
-    STDERR.puts "refilling buffer, got=#{cnt}"
     @chunk = @buffer[0, cnt]
   end
 

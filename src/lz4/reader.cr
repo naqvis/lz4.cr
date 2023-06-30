@@ -98,8 +98,10 @@ class Compress::LZ4::Reader < IO
 
   def close
     check_open
-    @closed = true
-    @io.close if @sync_close
+    if @sync_close
+      @closed = true # Only really closed if io is closed
+      @io.close
+    end
   end
 
   def finalize

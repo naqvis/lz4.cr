@@ -95,7 +95,7 @@ class Compress::LZ4::Writer < IO
     check_open
     write_header
     @uncompressed_bytes &+= slice.size
-    opts = LibLZ4::CompressOptionsT.new(stable_src: 1)
+    opts = LibLZ4::CompressOptionsT.new(stable_src: 0)
     until slice.empty?
       read_size = Math.min(slice.size, @block_size)
       ret = LibLZ4.compress_update(@context, @buffer, @buffer.size, slice, read_size, pointerof(opts))

@@ -32,7 +32,7 @@ class Compress::LZ4::Reader < IO
     ret = LibLZ4.create_decompression_context(out @context, LibLZ4::VERSION)
     raise_if_error(ret, "Failed to create decompression context")
     @buffer = Bytes.new(DEFAULT_BUFFER_SIZE)
-    @chunk = Bytes.empty
+    @buffer_rem = Bytes.empty
   end
 
   # Creates a new reader from the given *io*, yields it to the given block,
@@ -70,23 +70,23 @@ class Compress::LZ4::Reader < IO
     check_open
     return 0 if slice.empty?
 
-    refill_buffer if @chunk.empty?
+    refill_buffer
 
     opts = LibLZ4::DecompressOptionsT.new(stable_dst: 1)
     decompressed_bytes = 0
-    loop do
-      src_remaining = @chunk.size.to_u64
+    until @buffer_rem.empty?
+      src_remaining = @buffer_rem.size.to_u64
       dst_remaining = slice.size.to_u64
 
-      ret = LibLZ4.decompress(@context, slice, pointerof(dst_remaining), @chunk, pointerof(src_remaining), pointerof(opts))
+      ret = LibLZ4.decompress(@context, slice, pointerof(dst_remaining), @buffer_rem, pointerof(src_remaining), pointerof(opts))
       raise_if_error(ret, "Failed to decompress")
 
-      @chunk = @chunk + src_remaining
-      slice = slice + dst_remaining
+      @buffer_rem += src_remaining
+      slice += dst_remaining
       decompressed_bytes += dst_remaining
-      break if slice.empty?        # got all we needed
-      break if dst_remaining.zero? # didn't progress
-      refill_buffer if ret > 0     # ret is a hint of how much more src data is needed
+      break if slice.empty? # got all we needed
+      break if ret.zero?    # ret is a hint of how much more src data is needed
+      refill_buffer
     end
     @uncompressed_bytes &+= decompressed_bytes
     decompressed_bytes
@@ -112,9 +112,10 @@ class Compress::LZ4::Reader < IO
   end
 
   private def refill_buffer
+    return unless @buffer_rem.empty? # never overwrite existing buffer
     cnt = @io.read(@buffer)
     @compressed_bytes &+= cnt
-    @chunk = @buffer[0, cnt]
+    @buffer_rem = @buffer[0, cnt]
   end
 
   private def raise_if_error(ret : Int, msg : String)

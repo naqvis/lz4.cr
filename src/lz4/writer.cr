@@ -192,8 +192,6 @@ struct Compress::LZ4::CompressOptions
     pref.auto_flush = auto_flush ? 1 : 0
     pref.favor_dec_speed = favor_decompression_speed ? 1 : 0
 
-    pref.reserved = StaticArray[0_u32, 0_u32, 0_u32]
-
     pref
   end
 end

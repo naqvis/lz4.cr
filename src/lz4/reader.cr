@@ -31,7 +31,7 @@ class Compress::LZ4::Reader < IO
   def initialize(@io : IO, @sync_close = false)
     ret = LibLZ4.create_decompression_context(out @context, LibLZ4::VERSION)
     raise_if_error(ret, "Failed to create decompression context")
-    @buffer = Bytes.new(32 * 1024)
+    @buffer = Bytes.new(64 * 1024)
     @buffer_rem = Bytes.empty
   end
 

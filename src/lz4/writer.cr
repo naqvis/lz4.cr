@@ -85,7 +85,7 @@ class Compress::LZ4::Writer < IO
 
   private def write_header
     return if @header_written
-    ret = LibLZ4.compress_begin(@context, @buffer, @buffer.size, nil)
+    ret = LibLZ4.compress_begin(@context, @buffer, @buffer.size, pointerof(@pref))
     raise_if_error(ret, "Failed to begin compression")
     @compressed_bytes &+= ret
     @output.write(@buffer[0, ret])
@@ -102,7 +102,7 @@ class Compress::LZ4::Writer < IO
       raise_if_error(ret, "Failed to compress")
       @compressed_bytes &+= ret
       @output.write(@buffer[0, ret])
-      slice = slice + read_size
+      slice += read_size
     end
   end
 

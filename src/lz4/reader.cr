@@ -70,23 +70,24 @@ class Compress::LZ4::Reader < IO
     check_open
     return 0 if slice.empty?
 
-    refill_buffer
-
     opts = LibLZ4::DecompressOptionsT.new(stable_dst: 0)
     decompressed_bytes = 0
-    until @buffer_rem.empty?
+    hint = 0u64 # the hint from the last decompression
+    loop do
       src_remaining = @buffer_rem.size.to_u64
+      src_remaining = Math.min(hint, src_remaining) unless hint.zero?
       dst_remaining = slice.size.to_u64
 
-      ret = LibLZ4.decompress(@context, slice, pointerof(dst_remaining), @buffer_rem, pointerof(src_remaining), pointerof(opts))
-      raise_if_error(ret, "Failed to decompress")
+      hint = LibLZ4.decompress(@context, slice, pointerof(dst_remaining), @buffer_rem, pointerof(src_remaining), pointerof(opts))
+      raise_if_error(hint, "Failed to decompress")
 
       @buffer_rem += src_remaining
       slice += dst_remaining
       decompressed_bytes += dst_remaining
       break if slice.empty? # got all we needed
-      break if ret.zero?    # ret is a hint of how much more src data is needed
-      refill_buffer(ret)
+      break if hint.zero?   # hint of how much more src data is needed
+      refill_buffer
+      break if @buffer_rem.empty?
     end
     @uncompressed_bytes &+= decompressed_bytes
     decompressed_bytes
@@ -112,13 +113,9 @@ class Compress::LZ4::Reader < IO
     LibLZ4.reset_decompression_context(@context)
   end
 
-  private def refill_buffer(hint = nil)
+  private def refill_buffer
     return unless @buffer_rem.empty? # never overwrite existing buffer
-    if hint
-      cnt = @io.read(@buffer[0, Math.min(hint, @buffer.size)])
-    else
-      cnt = @io.read(@buffer)
-    end
+    cnt = @io.read(@buffer)
     @compressed_bytes &+= cnt
     @buffer_rem = @buffer[0, cnt]
   end

@@ -49,7 +49,7 @@ class Compress::LZ4::Writer < IO
                   in BlockSize::Max1Mb   then 1024 * 1024
                   in BlockSize::Max4Mb   then 4 * 1024 * 1024
                   end
-    buffer_size = LibLZ4.compress_frame_bound(@block_size, pointerof(@pref))
+    buffer_size = LibLZ4.compress_bound(@block_size, pointerof(@pref))
     @buffer = Bytes.new(buffer_size)
   end
 

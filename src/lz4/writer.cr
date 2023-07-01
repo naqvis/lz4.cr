@@ -170,7 +170,7 @@ struct Compress::LZ4::CompressOptions
   property favor_decompression_speed : Bool
 
   def initialize(@block_size = BlockSize::Default, @block_mode_linked = true, @checksum = false,
-                 @compression_level = CompressionLevel::FAST, @auto_flush = false,
+                 @compression_level = CompressionLevel::FAST, @auto_flush = true,
                  @favor_decompression_speed = false)
   end
 

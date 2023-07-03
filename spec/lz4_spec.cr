@@ -1,6 +1,14 @@
 require "./spec_helper"
 
 describe Compress::LZ4 do
+  it "can encode and decode" do
+    text = "foobar" * 1000
+    encoded = Compress::LZ4.encode(text)
+    encoded.size.should be < text.bytesize
+    decoded = Compress::LZ4.decode(encoded)
+    decoded.should eq text.to_slice
+  end
+
   it "can compress" do
     input = IO::Memory.new("foobar" * 100000)
     output = IO::Memory.new
@@ -81,5 +89,18 @@ describe Compress::LZ4 do
     read_count = reader.read(dst)
     read_count.should eq 1
     reader.close
+  end
+
+  it "can compress and decompress small parts" do
+    rp, wp = IO.pipe
+    writer = Compress::LZ4::Writer.new(wp)
+    reader = Compress::LZ4::Reader.new(rp)
+    writer.print "foo"
+    writer.flush
+    reader.read_byte.should eq 'f'.ord
+    reader.read_byte.should eq 'o'.ord
+    reader.read_byte.should eq 'o'.ord
+    writer.close
+    reader.read_byte.should be_nil
   end
 end

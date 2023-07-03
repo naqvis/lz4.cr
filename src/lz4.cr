@@ -11,19 +11,20 @@ module Compress::LZ4
   class LZ4Error < Exception
   end
 
-  def self.decode(compressed : Slice)
-    buf = IO::Memory.new(compressed)
-    uncompressed = Reader.open(buf) do |br|
-      br.gets_to_end
+  def self.decode(compressed : Bytes) : Bytes
+    input = IO::Memory.new(compressed)
+    output = IO::Memory.new
+    Reader.open(input) do |br|
+      IO.copy(br, output)
     end
-    uncompressed.to_slice
+    output.to_slice
   end
 
   def self.encode(content : String)
     encode(content.to_slice)
   end
 
-  def self.encode(content : Slice)
+  def self.encode(content : Bytes)
     buf = IO::Memory.new
     Writer.open(buf) do |br|
       br.write content
@@ -33,4 +34,4 @@ module Compress::LZ4
   end
 end
 
-require "./**"
+require "./lz4/*"

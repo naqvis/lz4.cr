@@ -26,22 +26,17 @@ require "./lib"
 class Compress::LZ4::Writer < IO
   property? sync_close : Bool
   getter? closed = false
-  @context : LibLZ4::Cctx
-  @pref : LibLZ4::PreferencesT
-  @header_written = false
   getter compressed_bytes = 0u64
   getter uncompressed_bytes = 0u64
-
-  def compression_ratio : Float64
-    return 0.0 if @compressed_bytes.zero?
-    @uncompressed_bytes / @compressed_bytes
-  end
+  @context : LibLZ4::Cctx
+  @pref : LibLZ4::PreferencesT
+  @opts = LibLZ4::CompressOptionsT.new(stable_src: 0)
+  @header_written = false
 
   def initialize(@output : IO, options = CompressOptions.new, @sync_close = false)
     ret = LibLZ4.create_compression_context(out @context, LibLZ4::VERSION)
     raise_if_error(ret, "Failed to create compression context")
     @pref = options.to_preferences
-    @opts = LibLZ4::CompressOptionsT.new(stable_src: 0)
     @block_size = case options.block_size
                   in BlockSize::Default  then 64 * 1024
                   in BlockSize::Max64Kb  then 64 * 1024
@@ -54,7 +49,7 @@ class Compress::LZ4::Writer < IO
   end
 
   # Creates a new writer to the given *filename*.
-  def self.new(filename : String, options = CompressOptions.nw)
+  def self.new(filename : String, options = CompressOptions.new)
     new(::File.new(filename, "w"), options: options, sync_close: true)
   end
 
@@ -106,7 +101,7 @@ class Compress::LZ4::Writer < IO
     end
   end
 
-  # Ends a LZ4 frame
+  # Flush LZ4 lib buffers even if a block isn't full
   def flush : Nil
     check_open
     ret = LibLZ4.flush(@context, @buffer, @buffer.size, pointerof(@opts))
@@ -116,7 +111,7 @@ class Compress::LZ4::Writer < IO
     @output.flush
   end
 
-  # Ends the current frame, the stream can still be written to, unless @sync_close
+  # Ends the current LZ4 frame, the stream can still be written to, unless @sync_close
   def close
     check_open
     ret = LibLZ4.compress_end(@context, @buffer, @buffer.size, pointerof(@opts))
@@ -136,19 +131,16 @@ class Compress::LZ4::Writer < IO
     LibLZ4.free_compression_context(@context)
   end
 
-  def closed? : Bool
-    @closed
-  end
-
   private def raise_if_error(ret : Int, msg : String)
     unless LibLZ4.is_error(ret).zero?
       raise LZ4Error.new("#{msg}: #{String.new(LibLZ4.get_error_name(ret))}")
     end
   end
 
-  # :nodoc:
-  def inspect(io : IO) : Nil
-    to_s(io)
+  # Uncompressed bytes read / compressed bytes outputted so far in the stream
+  def compression_ratio : Float64
+    return 0.0 if @compressed_bytes.zero?
+    @uncompressed_bytes / @compressed_bytes
   end
 end
 

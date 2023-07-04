@@ -103,4 +103,18 @@ describe Compress::LZ4 do
     writer.close
     reader.read_byte.should be_nil
   end
+
+  it "can rewind a reader" do
+    input = IO::Memory.new("foobar" * 100000)
+    output = IO::Memory.new
+    Compress::LZ4::Writer.open(output) do |lz4|
+      IO.copy(input, lz4)
+    end
+    output.rewind
+    Compress::LZ4::Reader.open(output) do |lz4|
+      lz4.read_byte.should eq 'f'.ord
+      lz4.rewind
+      lz4.read_byte.should eq 'f'.ord
+    end
+  end
 end

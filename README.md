@@ -65,4 +65,4 @@ end
 ## Contributors
 
 - [Ali Naqvi](https://github.com/naqvis) - creator and maintainer
-- [Carl Hörberg](https://github.com/carlhoerberg) - creator and maintainer
+- [Carl Hörberg](https://github.com/carlhoerberg)

@@ -110,6 +110,10 @@ class Compress::LZ4::Reader < IO
 
   def rewind
     @io.rewind
+    @buffer.clear
+    @buffer_rem = Bytes.empty
+    @uncompressed_bytes = 0u64
+    @compressed_bytes = 0u64
     LibLZ4.reset_decompression_context(@context)
   end
 

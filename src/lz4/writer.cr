@@ -1,3 +1,5 @@
+require "./lib"
+
 # A write-only `IO` object to compress data in the LZ4 format.
 #
 # Instances of this class wrap another `IO` object. When you write to this
@@ -22,119 +24,127 @@
 # end
 # ```
 class Compress::LZ4::Writer < IO
-  # If `#sync_close?` is `true`, closing this IO will close the underlying IO.
   property? sync_close : Bool
+  getter? closed = false
+  getter compressed_bytes = 0u64
+  getter uncompressed_bytes = 0u64
   @context : LibLZ4::Cctx
-  CHUNK_SIZE = 64 * 1024
   @pref : LibLZ4::PreferencesT
+  @opts = LibLZ4::CompressOptionsT.new(stable_src: 0)
+  @header_written = false
 
-  def initialize(@output : IO, options : CompressOptions = WriterOptions.default, @sync_close : Bool = false)
+  def initialize(@output : IO, options = CompressOptions.new, @sync_close = false)
     ret = LibLZ4.create_compression_context(out @context, LibLZ4::VERSION)
-    raise LZ4Error.new("Unable to create lz4 encoder instance: #{String.new(LibLZ4.get_error_name(ret))}") unless LibLZ4.is_error(ret) == 0
-
+    raise_if_error(ret, "Failed to create compression context")
     @pref = options.to_preferences
-    buf_size = LibLZ4.compress_frame_bound(CHUNK_SIZE, pointerof(@pref))
-    @buffer = Bytes.new(buf_size)
-
-    @header_written = false
-    @closed = false
+    @block_size = case options.block_size
+                  in BlockSize::Default  then 64 * 1024
+                  in BlockSize::Max64Kb  then 64 * 1024
+                  in BlockSize::Max256Kb then 256 * 1024
+                  in BlockSize::Max1Mb   then 1024 * 1024
+                  in BlockSize::Max4Mb   then 4 * 1024 * 1024
+                  end
+    buffer_size = LibLZ4.compress_bound(@block_size, pointerof(@pref))
+    @buffer = Bytes.new(buffer_size)
   end
 
   # Creates a new writer to the given *filename*.
-  def self.new(filename : String, options : CompressOptions = CompressOptions.default)
+  def self.new(filename : String, options = CompressOptions.new)
     new(::File.new(filename, "w"), options: options, sync_close: true)
   end
 
   # Creates a new writer to the given *io*, yields it to the given block,
   # and closes it at the end.
-  def self.open(io : IO, options : CompressOptions = CompressOptions.default, sync_close = false)
-    writer = new(io, preset: preset, sync_close: sync_close)
+  def self.open(io : IO, options = CompressOptions.new, sync_close = false)
+    writer = new(io, options: options, sync_close: sync_close)
     yield writer ensure writer.close
   end
 
   # Creates a new writer to the given *filename*, yields it to the given block,
   # and closes it at the end.
-  def self.open(filename : String, options : CompressOptions = CompressOptions.default)
+  def self.open(filename : String, options = CompressOptions.new)
     writer = new(filename, options: options)
     yield writer ensure writer.close
   end
 
   # Creates a new writer for the given *io*, yields it to the given block,
   # and closes it at its end.
-  def self.open(io : IO, options : CompressOptions = CompressOptions.default, sync_close : Bool = false)
+  def self.open(io : IO, options = CompressOptions.new, sync_close = false)
     writer = new(io, options: options, sync_close: sync_close)
     yield writer ensure writer.close
   end
 
-  # Always raises `IO::Error` because this is a write-only `IO`.
   def read(slice : Bytes)
     raise IO::Error.new "Can't read from LZ4::Writer"
   end
 
   private def write_header
     return if @header_written
-    @buffer.to_unsafe.clear(@buffer.size)
-    header_size = LibLZ4.compress_begin(@context, @buffer.to_unsafe, @buffer.size, pointerof(@pref))
-    raise LZ4Error.new("Failed to start compression: #{String.new(LibLZ4.get_error_name(header_size))}") unless LibLZ4.is_error(header_size) == 0
-    @output.write(@buffer[...header_size]) if header_size > 0
+    ret = LibLZ4.compress_begin(@context, @buffer, @buffer.size, pointerof(@pref))
+    raise_if_error(ret, "Failed to begin compression")
+    @compressed_bytes &+= ret
+    @output.write(@buffer[0, ret])
     @header_written = true
   end
 
-  # See `IO#write`.
   def write(slice : Bytes) : Nil
     check_open
-    return 0i64 if slice.empty?
     write_header
-    while slice.size > 0
-      write_size = slice.size
-      write_size = @buffer.size if write_size > @buffer.size
-      @buffer.to_unsafe.clear(@buffer.size)
-
-      comp_size = LibLZ4.compress_update(@context, @buffer.to_unsafe, @buffer.size, slice.to_unsafe, write_size, nil)
-      raise LZ4Error.new("Compression failed: #{String.new(LibLZ4.get_error_name(comp_size))}") unless LibLZ4.is_error(comp_size) == 0
-      @output.write(@buffer[...comp_size]) if comp_size > 0
-      # 0 means data was buffered, to avoid buffer too small problem at end,
-      # let's flush the data manually
-      flush if comp_size == 0
-      slice = slice[write_size..]
+    @uncompressed_bytes &+= slice.size
+    until slice.empty?
+      read_size = Math.min(slice.size, @block_size)
+      ret = LibLZ4.compress_update(@context, @buffer, @buffer.size, slice, read_size, pointerof(@opts))
+      raise_if_error(ret, "Failed to compress")
+      @compressed_bytes &+= ret
+      @output.write(@buffer[0, ret])
+      slice += read_size
     end
   end
 
-  # See `IO#flush`.
-  def flush
-    return if @closed
-    @buffer.to_unsafe.clear(@buffer.size)
-
-    ret = LibLZ4.flush(@context, @buffer.to_unsafe, @buffer.size, nil)
-    raise LZ4Error.new("Flush failed: #{String.new(LibLZ4.get_error_name(ret))}") unless LibLZ4.is_error(ret) == 0
-    @output.write(@buffer[...ret]) if ret > 0
+  # Flush LZ4 lib buffers even if a block isn't full
+  def flush : Nil
+    check_open
+    ret = LibLZ4.flush(@context, @buffer, @buffer.size, pointerof(@opts))
+    raise_if_error(ret, "Failed to flush")
+    @compressed_bytes &+= ret
+    @output.write(@buffer[0, ret])
+    @output.flush
   end
 
-  # Closes this writer. Must be invoked after all data has been written.
+  # Ends the current LZ4 frame, the stream can still be written to, unless @sync_close
   def close
-    return if @closed || @context.nil?
-
-    @buffer.to_unsafe.clear(@buffer.size)
-    comp_size = LibLZ4.compress_end(@context, @buffer.to_unsafe, @buffer.size, nil)
-    raise LZ4Error.new("Failed to end compression: #{String.new(LibLZ4.get_error_name(comp_size))}") unless LibLZ4.is_error(comp_size) == 0
-    @output.write(@buffer[...comp_size]) if comp_size > 0
+    check_open
+    ret = LibLZ4.compress_end(@context, @buffer, @buffer.size, pointerof(@opts))
+    raise_if_error(ret, "Failed to end frame")
+    @compressed_bytes &+= ret
+    @output.write(@buffer[0, ret])
+    @output.flush
     @header_written = false
+  ensure
+    if @sync_close
+      @closed = true # the stream can still be written until the underlaying io is closed
+      @output.close
+    end
+  end
 
+  def finalize
     LibLZ4.free_compression_context(@context)
-    @closed = true
-    @output.close if @sync_close
   end
 
-  # Returns `true` if this IO is closed.
-  def closed?
-    @closed
+  private def raise_if_error(ret : Int, msg : String)
+    unless LibLZ4.is_error(ret).zero?
+      raise LZ4Error.new("#{msg}: #{String.new(LibLZ4.get_error_name(ret))}")
+    end
   end
 
-  # :nodoc:
-  def inspect(io : IO) : Nil
-    to_s(io)
+  # Uncompressed bytes read / compressed bytes outputted so far in the stream
+  def compression_ratio : Float64
+    return 0.0 if @compressed_bytes.zero?
+    @uncompressed_bytes / @compressed_bytes
   end
 end
+
+alias Compress::LZ4::BlockSize = Compress::LZ4::LibLZ4::BlockSizeIdT
 
 struct Compress::LZ4::CompressOptions
   enum CompressionLevel
@@ -144,15 +154,14 @@ struct Compress::LZ4::CompressOptions
     OPT_MIN = 10
     MAX     = 12
   end
-  # block size
-  property block_size : LibLZ4::BlockSizeIdT
+  property block_size : BlockSize
   property block_mode_linked : Bool
   property checksum : Bool
   property compression_level : CompressionLevel
   property auto_flush : Bool
   property favor_decompression_speed : Bool
 
-  def initialize(@block_size = LibLZ4::BlockSizeIdT::Max256Kb, @block_mode_linked = true, @checksum = false,
+  def initialize(@block_size = BlockSize::Default, @block_mode_linked = true, @checksum = false,
                  @compression_level = CompressionLevel::FAST, @auto_flush = false,
                  @favor_decompression_speed = false)
   end
@@ -174,8 +183,6 @@ struct Compress::LZ4::CompressOptions
     pref.compression_level = compression_level.value
     pref.auto_flush = auto_flush ? 1 : 0
     pref.favor_dec_speed = favor_decompression_speed ? 1 : 0
-
-    pref.reserved = StaticArray[0_u32, 0_u32, 0_u32]
 
     pref
   end

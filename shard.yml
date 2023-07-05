@@ -1,8 +1,10 @@
 name: lz4
-version: 0.1.4
+version: 1.0.0
 
 authors:
   - Ali Naqvi <syed.alinaqvi@gmail.com>
+  - Carl Hörberg <carl@84codes.com>
+
 description: |
   Crystal bindings to the LZ4 compression library.
 
